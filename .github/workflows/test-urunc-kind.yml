@@ -1,9 +1,35 @@
 name: Test urunc deploy with kind
-
 on:
   push:
     branches:
-      - feat/kind-workflow
+      - feat/kind-workflow 
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ''
+      skip-build:
+        description: 'Skip the build job?'
+        required: false
+        default: "no"
+        type: string
+      skip-lint:
+        description: 'Skip the lint job?'
+        required: false
+        default: "no"
+        type: string
+      runner:
+        type: string
+        default: '["base", "dind", "2204"]'
+      runner-archs:
+        type: string
+        default: '["amd64", "arm64"]'
+      runner-arch-map:
+        type: string
+        default: '[{"amd64":"x86_64", "arm64":"aarch64", "arm":"armv7l"}]'
+    secrets:
+      GIT_CLONE_PAT:
+        required: false
   workflow_dispatch:
 
 jobs:
@@ -18,133 +44,151 @@ jobs:
           - arch: arm64
             runner: ubuntu-22.04-arm
       fail-fast: false
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.24.1'
-          cache: false
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24.1'
+        cache: false
 
-      - name: Install base dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git wget build-essential libseccomp-dev pkg-config bc make qemu-system cpu-checker
-
-      - name: Enable KVM and nested virtualization
-        run: |
-          ARCH=$(uname -m)
-          if [ "$ARCH" = "x86_64" ]; then
-            echo "options kvm-intel nested=Y" | sudo tee /etc/modprobe.d/kvm-nested.conf
-            sudo modprobe -r kvm_intel || true
-            sudo modprobe kvm_intel
-            if [ "$(cat /sys/module/kvm_intel/parameters/nested)" != "Y" ]; then
-              echo "Failed to enable nested virtualization for Intel"
-              exit 1
-            fi
-          elif [ "$ARCH" = "aarch64" ]; then
-            echo "options kvm-arm nested=1" | sudo tee /etc/modprobe.d/kvm-nested.conf
-            sudo modprobe -r kvm_arm || true
-            sudo modprobe kvm_arm
-            if [ "$(cat /sys/module/kvm_arm/parameters/nested)" != "1" ]; then
-              echo "Failed to enable nested virtualization for ARM"
-              exit 1
-            fi
-          else
-            echo "Unsupported architecture: $ARCH"
-            exit 1
+    - name: Install base dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git wget build-essential libseccomp-dev pkg-config bc make qemu-system
+    - name: Install kind
+      run: |
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "x86_64" ]; then
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
+        elif [ "$ARCH" = "aarch64" ]; then
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-arm64
+        else
+          echo "Unsupported architecture: $ARCH"
+          exit 1
+        fi
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
+    - name: Create kind configuration
+      run: |
+        cat <<EOF > kind-config.yaml
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+          - role: control-plane
+            extraMounts:
+              - hostPath: /dev/kvm
+                containerPath: /dev/kvm
+        EOF
+    - name: Create kind cluster
+      run: |
+        sudo kind create cluster --name urunc-test --config kind-config.yaml
+    - name: Install dependencies inside kind node
+      run: |
+        docker exec urunc-test-control-plane apt-get update
+        docker exec urunc-test-control-plane apt-get install -y git wget build-essential libseccomp-dev pkg-config bc
+    - name: Install runc inside kind node
+      run: |
+        docker exec urunc-test-control-plane bash -c '
+          if ! which runc; then
+            RUNC_VERSION=$(curl -s https://api.github.com/repos/opencontainers/runc/releases/latest | grep "tag_name" | cut -d\" -f4 | sed "s/v//")
+            wget -q https://github.com/opencontainers/runc/releases/download/v$RUNC_VERSION/runc.$(dpkg --print-architecture)
+            chmod +x runc.$(dpkg --print-architecture)
+            mv runc.$(dpkg --print-architecture) /usr/local/sbin/runc
           fi
-          sudo usermod -aG kvm $USER
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          kvm-ok || { echo "KVM not supported"; exit 1; }
-
-      - name: Install kind
-        run: |
+        '
+    - name: Configure containerd inside kind node
+      run: |
+        docker exec urunc-test-control-plane bash -c '
+          mkdir -p /etc/containerd
+          containerd config default > /etc/containerd/config.toml
+        '
+    - name: Set snapshotter to overlayfs
+      run: |
+        docker exec urunc-test-control-plane sed -i 's/snapshotter = "devmapper"/snapshotter = "overlayfs"/' /etc/containerd/config.toml
+    - name: Install Go inside kind node
+      run: |
+        docker exec urunc-test-control-plane bash -c '
+          GO_VERSION=1.24.1
+          wget -q https://go.dev/dl/go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz
+          mkdir /usr/local/go${GO_VERSION}
+          tar -C /usr/local/go${GO_VERSION} -xzf go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz
+          echo "export PATH=\$PATH:/usr/local/go$GO_VERSION/go/bin" >> /etc/profile
+          source /etc/profile
+          rm -f go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz
+        '
+    - name: Build and install urunc inside kind node
+      run: |
+        docker exec urunc-test-control-plane bash -c '
+          git clone https://github.com/nubificus/urunc.git
+          cd urunc
+          make
+          make install
+          cd ..
+          rm -rf urunc
+        '
+    - name: Install QEMU inside kind node
+      run: |
+        docker exec urunc-test-control-plane apt-get install -y qemu-system
+    - name: Install Firecracker inside kind node
+      run: |
+        docker exec urunc-test-control-plane bash -c '
           ARCH=$(uname -m)
-          if [ "$ARCH" = "x86_64" ]; then
-            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
-          elif [ "$ARCH" = "aarch64" ]; then
-            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-arm64
-          else
-            echo "Unsupported architecture: $ARCH"
-            exit 1
-          fi
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-
-      - name: Install kubectl
-        run: |
-          ARCH=$(uname -m)
-          if [ "$ARCH" = "x86_64" ]; then
-            curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
-          elif [ "$ARCH" = "aarch64" ]; then
-            curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/arm64/kubectl"
-          else
-            echo "Unsupported architecture: $ARCH"
-            exit 1
-          fi
-          chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/kubectl
-
-      - name: Create kind configuration
-        run: |
-            cat <<EOF > kind-config.yaml
-            kind: Cluster
-            apiVersion: kind.x-k8s.io/v1alpha4
-            nodes:
-              - role: control-plane
-                extraMounts:
-                  - hostPath: /dev/kvm
-                    containerPath: /dev/kvm
-            EOF
-
-      - name: Create kind cluster
-        run: |
-          sudo kind create cluster --name urunc-test --config kind-config.yaml
-          docker exec urunc-test-control-plane ls /dev/kvm || { echo "KVM not accessible in kind node"; exit 1; }
-
-      # [... τα υπόλοιπα βήματα μένουν ίδια μέχρι το mapping block ...]
-
-      - name: Add urunc runtime to containerd
-        run: |
-          docker exec urunc-test-control-plane bash -c '
-            cat <<EOF >> /etc/containerd/config.toml
-            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.urunc]
-              runtime_type = "io.containerd.urunc.v2"
-              container_annotations = ["com.urunc.unikernel.*"]
-              pod_annotations = ["com.urunc.unikernel.*"]
-              snapshotter = "overlayfs"
-            EOF
-            systemctl restart containerd
-            sleep 5
-            systemctl status containerd || { echo "containerd failed to start"; exit 1; }
-          '
-
-      - name: Set up kubectl config
-        run: |
-          mkdir -p ~/.kube
-          kind get kubeconfig --name urunc-test > ~/.kube/config
-          export KUBECONFIG=~/.kube/config
-
-      - name: Create RuntimeClass
-        run: |
-          cat <<EOF | kubectl apply -f -
-            kind: RuntimeClass
-            apiVersion: node.k8s.io/v1
-            metadata:
-              name: urunc
-            handler: urunc
-            EOF
-
-      - name: Deploy NGINX unikernel
-        run: |
-          cat <<EOF | kubectl apply -f -
+          VERSION="v1.7.0"
+          curl -L https://github.com/firecracker-microvm/firecracker/releases/download/${VERSION}/firecracker-${VERSION}-${ARCH}.tgz | tar -xz
+          mv release-${VERSION}-${ARCH}/firecracker-${VERSION}-${ARCH} /usr/local/bin/firecracker
+          rm -fr release-${VERSION}-${ARCH}
+        '
+    - name: Install Solo5 inside kind node
+      run: |
+        docker exec urunc-test-control-plane bash -c '
+          git clone -b v0.9.0 https://github.com/Solo5/solo5.git
+          cd solo5
+          ./configure.sh && make -j$(nproc)
+          cp tenders/hvt/solo5-hvt /usr/local/bin
+          cp tenders/spt/solo5-spt /usr/local/bin
+          cd ..
+          rm -rf solo5
+        '
+    - name: Add urunc to containerd config
+      run: |
+        docker exec urunc-test-control-plane bash -c '
+          cat <<EOF >> /etc/containerd/config.toml
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.urunc]
+            runtime_type = "io.containerd.urunc.v2"
+            container_annotations = ["com.urunc.unikernel.*"]
+            pod_annotations = ["com.urunc.unikernel.*"]
+            snapshotter = "overlayfs"
+          EOF
+          pkill containerd || true
+          containerd &
+        '
+    - name: Install kubectl
+      run: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    - name: Set up kubectl config
+      run: |
+        mkdir -p ~/.kube
+        kind get kubeconfig --name urunc-test > ~/.kube/config
+        export KUBECONFIG=~/.kube/config
+    - name: Create RuntimeClass
+      run: |
+        cat <<EOF | kubectl apply -f -
+          kind: RuntimeClass
+          apiVersion: node.k8s.io/v1
+          metadata:
+            name: urunc
+          handler: urunc
+        EOF
+    - name: Deploy NGINX unikernel
+      run: |
+        cat <<EOF | kubectl apply -f -
             apiVersion: v1
             kind: Pod
             metadata:
@@ -158,24 +202,23 @@ jobs:
                   image: harbor.nbfc.io/nubificus/urunc/nginx-qemu-unikraft-initrd:latest
                   imagePullPolicy: Always
                   ports:
-                    - containerPort: 80
-                      protocol: TCP
+                  - containerPort: 80
+                    protocol: TCP
                   resources:
                     requests:
                       cpu: 10m
-            EOF
+        EOF
+    - name: Verify deployment
+      run: |
+        kubectl wait --for=condition=Ready pod/nginx-urunc --timeout=300s
+        kubectl logs nginx-urunc
 
-      - name: Verify deployment
-        run: |
-          kubectl wait --for=condition=Ready pod/nginx-urunc --timeout=300s || { echo "Pod failed to become ready"; exit 1; }
-          kubectl logs nginx-urunc
-
-      - name: Debug pod failure
-        if: failure()
-        run: |
-          echo "=== Describe Pod ==="
-          kubectl describe pod nginx-urunc || true
-          echo "=== Logs ==="
-          kubectl logs nginx-urunc || true
-          echo "=== Containerd Config ==="
-          docker exec urunc-test-control-plane cat /etc/containerd/config.toml || true
+    - name: Debug pod failure
+      if: failure()
+      run: |
+        echo "=== Describe Pod ==="
+        kubectl describe pod nginx-urunc || true
+        echo "=== Logs ==="
+        kubectl logs nginx-urunc || true
+        echo "=== Containerd Config ==="
+        docker exec urunc-test-control-plane cat /etc/containerd/config.toml || true
