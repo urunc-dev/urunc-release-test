@@ -64,3 +64,11 @@ jobs:
       ref: ${{ inputs.ref }}
     secrets: inherit
 
+   test-urunc-kind:
+    if: ${{ inputs.skip-build != 'yes' }}
+    needs: [build, unit_test]
+    name: Test urunc with kind
+    uses: ./.github/workflows/test-urunc-kind.yml
+    with:
+      ref: ${{ inputs.ref }}
+    secrets: inherit
