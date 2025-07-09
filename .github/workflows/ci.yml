@@ -64,7 +64,7 @@ jobs:
       ref: ${{ inputs.ref }}
     secrets: inherit
 
-   test-urunc-kind:
+  test-urunc-kind:
     if: ${{ inputs.skip-build != 'yes' }}
     needs: [build, unit_test]
     name: Test urunc with kind
