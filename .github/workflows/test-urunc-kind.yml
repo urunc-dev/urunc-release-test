@@ -1,5 +1,8 @@
 name: Test urunc deploy with kind
 on:
+  push:
+    branches:
+      - feat/kind-workflow 
   workflow_call:
     inputs:
       ref:
