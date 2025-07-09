@@ -205,7 +205,7 @@ jobs:
     - name: Deploy NGINX unikernel
       run: |
         cat <<EOF | kubectl apply -f -
-        api plexec/v1
+        apiVersion: v1
         kind: Pod
         metadata:
           name: nginx-urunc
