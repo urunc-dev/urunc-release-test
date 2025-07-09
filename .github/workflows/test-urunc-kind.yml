@@ -180,9 +180,15 @@ jobs:
           pkill containerd || true
           containerd &
         '
-
-    - name: Set up kubectl
+    - name: Install kubectl
       run: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+    - name: Set up kubectl config
+      run: |
+        mkdir -p ~/.kube
         kind get kubeconfig --name urunc-test > ~/.kube/config
         export KUBECONFIG=~/.kube/config
 
