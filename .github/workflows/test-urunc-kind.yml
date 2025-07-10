@@ -166,20 +166,23 @@ jobs:
       run: |
         docker exec urunc-test-control-plane bash -c '
         cat <<EOF | tee -a /etc/containerd/config.toml
+          [plugins."io.containerd.grpc.v1.cri".containerd]
+            default_runtime_name = "urunc"
           [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.urunc]
             runtime_type = "io.containerd.urunc.v2"
             container_annotations = ["com.urunc.unikernel.*"]
             pod_annotations = ["com.urunc.unikernel.*"]
             snapshotter = "overlayfs"
         EOF
-        
+        ls -la /usr/local/bin/urunc*
+        ls -la /usr/local/bin/containerd-shim-urunc-v2*
+        chmod +x /usr/local/bin/containerd-shim-urunc-v2*
         systemctl restart containerd || {
           pkill -f containerd
           nohup containerd >/var/log/containerd.log 2>&1 &
         }
         sleep 15
-        
-        
+      
         ps aux | grep [c]ontainerd || { echo "containerd failed to start"; exit 1; }
         systemctl status containerd 
         ' 
