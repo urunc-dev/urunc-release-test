@@ -106,12 +106,15 @@ jobs:
     - name: Configure containerd inside kind node
       run: |
         docker exec urunc-test-control-plane bash -c '
+          systemctl status containerd || containerd &
           mkdir -p /etc/containerd
           containerd config default > /etc/containerd/config.toml
         '
     - name: Set snapshotter to overlayfs
       run: |
-        docker exec urunc-test-control-plane sed -i 's/snapshotter = "devmapper"/snapshotter = "overlayfs"/' /etc/containerd/config.toml
+        docker exec urunc-test-control-plane bash -c '
+        sed -i 's/snapshotter = "devmapper"/snapshotter = "overlayfs"/' /etc/containerd/config.toml
+        '
     - name: Install Go inside kind node
       run: |
         docker exec urunc-test-control-plane bash -c '
@@ -164,14 +167,21 @@ jobs:
         docker exec urunc-test-control-plane bash -c '
         cat <<EOF | tee -a /etc/containerd/config.toml
           [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.urunc]
-            runtime_type = "io.containerd.urunc.v2"
-            container_annotations = ["com.urunc.unikernel.*"]
-            pod_annotations = ["com.urunc.unikernel.*"]
-            snapshotter = "overlayfs"
+          runtime_type = "io.containerd.urunc.v2"
+          container_annotations = ["com.urunc.unikernel.*"]
+          pod_annotations = ["com.urunc.unikernel.*"]
+          snapshotter = "overlayfs"
         EOF
-        systemctl restart containerd
+        
+        pkill -f containerd || true
+        sleep 5
+        nohup containerd >/var/log/containerd.log 2>&1 &
         sleep 10
-        '
+        systemctl restart containerd || containerd &
+        sleep 10
+        ps aux | grep [c]ontainerd || { echo "containerd failed to start"; exit 1; }
+        ctr runtime ls | grep urunc || { echo "urunc runtime not registered"; exit 1; }
+          '
 
           
     - name: Install kubectl
@@ -223,7 +233,7 @@ jobs:
         EOF
     - name: Verify deployment
       run: |
-        kubectl wait --for=condition=Ready pod/nginx-urunc --timeout=300s
+        kubectl wait --for=condition=Ready pod/nginx-urunc --timeout=100s
         kubectl logs nginx-urunc
 
     - name: Debug pod failure
