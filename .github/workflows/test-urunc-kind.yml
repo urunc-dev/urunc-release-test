@@ -157,16 +157,16 @@ jobs:
     - name: Add urunc to containerd config
       run: |
         docker exec urunc-test-control-plane bash -c '
-          cat <<EOF >> /etc/containerd/config.toml
+        cat <<EOF | tee -a /etc/containerd/config.toml
           [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.urunc]
             runtime_type = "io.containerd.urunc.v2"
             container_annotations = ["com.urunc.unikernel.*"]
             pod_annotations = ["com.urunc.unikernel.*"]
             snapshotter = "overlayfs"
-          EOF
-          pkill containerd || true
-          containerd &
-        '
+        EOF
+        docker exec urunc-test-control-plane pkill containerd || true
+        docker exec urunc-test-control-plane containerd &
+          
     - name: Install kubectl
       run: |
         curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
