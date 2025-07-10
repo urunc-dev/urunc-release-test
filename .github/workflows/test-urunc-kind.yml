@@ -167,9 +167,9 @@ jobs:
         docker exec urunc-test-control-plane bash -c '
         cat <<EOF | tee -a /etc/containerd/config.toml
           [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.urunc]
-          runtime_type = "io.containerd.urunc.v2"
-          container_annotations = ["com.urunc.unikernel.*"]
-          pod_annotations = ["com.urunc.unikernel.*"]
+            runtime_type = "io.containerd.urunc.v2"
+            container_annotations = ["com.urunc.unikernel.*"]
+            pod_annotations = ["com.urunc.unikernel.*"]
           snapshotter = "overlayfs"
         EOF
         
