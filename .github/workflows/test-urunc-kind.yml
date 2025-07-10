@@ -83,6 +83,8 @@ jobs:
             extraMounts:
               - hostPath: /dev/kvm
                 containerPath: /dev/kvm
+        networking:
+          apiServerPort: 6443        
         EOF
     - name: Create kind cluster
       run: |
@@ -180,7 +182,9 @@ jobs:
       run: |
         mkdir -p ~/.kube
         kind get kubeconfig --name urunc-test > ~/.kube/config
+        chmod 600 ~/.kube/config
         export KUBECONFIG=~/.kube/config
+        kubectl config use-context kind-urunc-test
     - name: Create RuntimeClass
       run: |
         cat <<EOF | kubectl apply -f -
