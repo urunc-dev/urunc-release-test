@@ -177,6 +177,7 @@ jobs:
         ls -la /usr/local/bin/urunc*
         ls -la /usr/local/bin/containerd-shim-urunc-v2*
         chmod +x /usr/local/bin/containerd-shim-urunc-v2*
+        
         systemctl restart containerd || {
           pkill -f containerd
           nohup containerd >/var/log/containerd.log 2>&1 &
