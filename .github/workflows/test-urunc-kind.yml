@@ -170,7 +170,7 @@ jobs:
             runtime_type = "io.containerd.urunc.v2"
             container_annotations = ["com.urunc.unikernel.*"]
             pod_annotations = ["com.urunc.unikernel.*"]
-          snapshotter = "overlayfs"
+            snapshotter = "overlayfs"
         EOF
         
         pkill -f containerd || true
