@@ -130,8 +130,8 @@ jobs:
           cd urunc
           make
           make install
+          make install
           cd ..
-          rm -rf urunc
         '
     - name: Install QEMU inside kind node
       run: |
