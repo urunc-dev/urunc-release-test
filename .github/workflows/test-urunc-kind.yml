@@ -142,7 +142,6 @@ jobs:
     - name: Install QEMU inside kind node
       run: |
         docker exec urunc-test-control-plane apt-get install -y qemu-system
-        qemu-system-x86_64 --version
 
     - name: Install Firecracker inside kind node
       run: |
@@ -197,6 +196,7 @@ jobs:
         docker exec urunc-test-control-plane bash -c '
         ls -la /usr/local/bin/urunc*
         ls -la /usr/local/bin/containerd-shim-urunc-v2*
+        containerd --version
         '
 
     - name: Install kubectl
@@ -260,4 +260,4 @@ jobs:
         kubectl logs nginx-urunc || true
         echo "=== Containerd Config ==="
         docker exec urunc-test-control-plane cat /etc/containerd/config.toml || true
-        containerd --version
+        
