@@ -166,10 +166,8 @@ jobs:
             pod_annotations = ["com.urunc.unikernel.*"]
             snapshotter = "overlayfs"
         EOF
-        pkill containerd || true
-        containerd &
-        sleep 5
-        ps aux | grep containerd || { echo "containerd failed to start"; exit 1; }
+        systemctl restart containerd
+        sleep 10
         '
 
           
@@ -185,6 +183,10 @@ jobs:
         chmod 600 ~/.kube/config
         export KUBECONFIG=~/.kube/config
         kubectl config use-context kind-urunc-test
+        # Verify cluster connection
+        kubectl cluster-info
+        # Wait for API server to be ready
+        kubectl wait --for=condition=Ready nodes --all --timeout=200s
     - name: Create RuntimeClass
       run: |
         cat <<EOF | kubectl apply -f -
