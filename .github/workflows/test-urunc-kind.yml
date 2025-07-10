@@ -164,8 +164,12 @@ jobs:
             pod_annotations = ["com.urunc.unikernel.*"]
             snapshotter = "overlayfs"
         EOF
-        docker exec urunc-test-control-plane pkill containerd || true
-        docker exec urunc-test-control-plane containerd &
+        pkill containerd || true
+        containerd &
+        sleep 5
+        ps aux | grep containerd || { echo "containerd failed to start"; exit 1; }
+        '
+
           
     - name: Install kubectl
       run: |
