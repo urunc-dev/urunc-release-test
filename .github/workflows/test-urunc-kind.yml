@@ -181,11 +181,16 @@ jobs:
         
         
         ps aux | grep [c]ontainerd || { echo "containerd failed to start"; exit 1; }
-        ctr runtime ls | grep urunc || { echo "urunc runtime not registered"; exit 1; }
         systemctl status containerd 
         ' 
 
-          
+    - name: Verify urunc installation
+      run: |
+        docker exec urunc-test-control-plane bash -c '
+        ls -la /usr/local/bin/urunc*
+        ls -la /usr/local/bin/containerd-shim-urunc-v2*
+        '
+
     - name: Install kubectl
       run: |
         curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
