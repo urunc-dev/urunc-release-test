@@ -112,9 +112,9 @@ jobs:
         '
     - name: Set snapshotter to overlayfs
       run: |
-        docker exec urunc-test-control-plane bash -c '
-        sed -i 's/snapshotter = "devmapper"/snapshotter = "overlayfs"/' /etc/containerd/config.toml
-        '
+        docker exec urunc-test-control-plane bash -c \
+        'sed -i "s/snapshotter = \"devmapper\"/snapshotter = \"overlayfs\"/g" /etc/containerd/config.toml'
+
     - name: Install Go inside kind node
       run: |
         docker exec urunc-test-control-plane bash -c '
