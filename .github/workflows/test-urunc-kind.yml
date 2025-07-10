@@ -173,15 +173,17 @@ jobs:
             snapshotter = "overlayfs"
         EOF
         
-        pkill -f containerd || true
-        sleep 5
-        nohup containerd >/var/log/containerd.log 2>&1 &
-        sleep 10
-        systemctl restart containerd || containerd &
-        sleep 10
+        systemctl restart containerd || {
+          pkill -f containerd
+          nohup containerd >/var/log/containerd.log 2>&1 &
+        }
+        sleep 15
+        
+        
         ps aux | grep [c]ontainerd || { echo "containerd failed to start"; exit 1; }
         ctr runtime ls | grep urunc || { echo "urunc runtime not registered"; exit 1; }
-          '
+        systemctl status containerd 
+        ' 
 
           
     - name: Install kubectl
