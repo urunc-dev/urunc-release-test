@@ -130,7 +130,6 @@ jobs:
           cd urunc
           make
           make install
-          make install
           cd ..
         '
     - name: Install QEMU inside kind node
@@ -169,7 +168,14 @@ jobs:
         systemctl restart containerd
         sleep 10
         '
-
+    - name: Build and install urunc inside kind node v2
+      run: |
+        docker exec urunc-test-control-plane bash -c '
+          cd urunc
+          make
+          make install
+          cd ..
+        '
           
     - name: Install kubectl
       run: |
