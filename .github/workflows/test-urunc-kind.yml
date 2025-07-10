@@ -128,6 +128,8 @@ jobs:
     - name: Build and install urunc inside kind node
       run: |
         docker exec urunc-test-control-plane bash -c '
+          set -e
+          export PATH=$PATH:/usr/local/go/bin
           git clone https://github.com/nubificus/urunc.git
           cd urunc
           make
