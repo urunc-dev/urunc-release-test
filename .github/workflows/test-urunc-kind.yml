@@ -59,7 +59,7 @@ jobs:
     - name: Install base dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git wget build-essential libseccomp-dev pkg-config bc make qemu-system
+        sudo apt-get install -y git wget build-essential libseccomp-dev pkg-config bc make 
     - name: Install kind
       run: |
         ARCH=$(uname -m)
@@ -142,6 +142,8 @@ jobs:
     - name: Install QEMU inside kind node
       run: |
         docker exec urunc-test-control-plane apt-get install -y qemu-system
+        qemu-system-x86_64 --version
+
     - name: Install Firecracker inside kind node
       run: |
         docker exec urunc-test-control-plane bash -c '
@@ -150,6 +152,7 @@ jobs:
           curl -L https://github.com/firecracker-microvm/firecracker/releases/download/${VERSION}/firecracker-${VERSION}-${ARCH}.tgz | tar -xz
           mv release-${VERSION}-${ARCH}/firecracker-${VERSION}-${ARCH} /usr/local/bin/firecracker
           rm -fr release-${VERSION}-${ARCH}
+          firecracker --version
         '
     - name: Install Solo5 inside kind node
       run: |
@@ -161,6 +164,7 @@ jobs:
           cp tenders/spt/solo5-spt /usr/local/bin
           cd ..
           rm -rf solo5
+          solo5-hvt --version 
         '
     - name: Add urunc to containerd config
       run: |
@@ -177,7 +181,7 @@ jobs:
         ls -la /usr/local/bin/urunc*
         ls -la /usr/local/bin/containerd-shim-urunc-v2*
         chmod +x /usr/local/bin/containerd-shim-urunc-v2*
-        
+
         systemctl restart containerd || {
           pkill -f containerd
           nohup containerd >/var/log/containerd.log 2>&1 &
@@ -244,7 +248,7 @@ jobs:
         EOF
     - name: Verify deployment
       run: |
-        kubectl wait --for=condition=Ready pod/nginx-urunc --timeout=100s
+        kubectl wait --for=condition=Ready pod/nginx-urunc --timeout=60s
         kubectl logs nginx-urunc
 
     - name: Debug pod failure
@@ -256,3 +260,4 @@ jobs:
         kubectl logs nginx-urunc || true
         echo "=== Containerd Config ==="
         docker exec urunc-test-control-plane cat /etc/containerd/config.toml || true
+        containerd --version
